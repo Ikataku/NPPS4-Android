@@ -30,10 +30,14 @@ public class NPPS4Service extends Service {
     public static final int STATE_RUNNING = 2;
     public static final int STATE_STOPPING = 3;
 
-    private Exception lastError = null;
+    private volatile Exception lastError = null;
     private Runnable serverRunnable = null;
     private final ExecutorService executor = Executors.newSingleThreadExecutor();
-    private int state = STATE_STOPPED;
+    private volatile int state = STATE_STOPPED;
+    private final Object lifecycleLock = new Object();
+    private boolean stopRequested = false;
+    private boolean pythonPrepared = false;
+    private int latestStartId = 0;
     private final INPPS4 binder = new INPPS4.Stub() {
         @Override
         public int getStatus() {
@@ -47,14 +51,19 @@ public class NPPS4Service extends Service {
 
         @Override
         public void shutdown() {
-            if (serverRunnable == null) {
-                return;
-            }
+            synchronized (lifecycleLock) {
+                if (serverRunnable == null) {
+                    return;
+                }
 
-            Python py = Python.getInstance();
-            PyObject androidMain = py.getModule("android_main");
-            state = STATE_STOPPING;
-            androidMain.callAttr("stop_server");
+                stopRequested = true;
+                state = STATE_STOPPING;
+                if (pythonPrepared) {
+                    Python py = Python.getInstance();
+                    PyObject androidMain = py.getModule("android_main");
+                    androidMain.callAttr("stop_server");
+                }
+            }
         }
 
         @Override
@@ -110,26 +119,52 @@ public class NPPS4Service extends Service {
                 startForeground(startId, notification);
             }
 
-            state = STATE_STARTING;
             try {
                 Python py = Python.getInstance();
                 PyObject androidMain = py.getModule("android_main");
 
+                synchronized (lifecycleLock) {
+                    if (stopRequested) {
+                        return;
+                    }
+                    state = STATE_STARTING;
+                    androidMain.callAttr("prepare_server");
+                    pythonPrepared = true;
+                }
+
                 androidMain.callAttr("setup_server");
-                state = STATE_RUNNING;
+                synchronized (lifecycleLock) {
+                    if (stopRequested) {
+                        androidMain.callAttr("stop_server");
+                        return;
+                    }
+                    state = STATE_RUNNING;
+                }
                 androidMain.callAttr("start_server");
             } catch (PyException e) {
                 Log.e("NPPS4", "Python error", e);
                 lastError = e;
+            } finally {
+                synchronized (lifecycleLock) {
+                    state = STATE_STOPPED;
+                    serverRunnable = null;
+                    pythonPrepared = false;
+                    stopRequested = false;
+                    stopForeground(STOP_FOREGROUND_REMOVE);
+                    stopSelf(latestStartId);
+                }
             }
-
-            state = STATE_STOPPED;
-            serverRunnable = null;
-            stopForeground(STOP_FOREGROUND_REMOVE);
-            stopSelf(startId);
         };
-        serverRunnable = runnable;
-        executor.submit(runnable);
+        synchronized (lifecycleLock) {
+            latestStartId = startId;
+            if (serverRunnable != null) {
+                return START_STICKY;
+            }
+            stopRequested = false;
+            pythonPrepared = false;
+            serverRunnable = runnable;
+            executor.submit(runnable);
+        }
 
         return START_STICKY;
     }
