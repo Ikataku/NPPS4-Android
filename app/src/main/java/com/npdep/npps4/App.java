@@ -68,12 +68,16 @@ public class App extends PyApplication {
                     // Load keys prefixed with "env." to avoid
                     if (key.startsWith("env.")) {
                         String envKey = key.substring(4);
+                        if (envKey.startsWith("NPPS4_ADMIN_EXP_")) {
+                            throw new IllegalStateException(
+                                    "Admin EXP secrets must not be stored in manifest metadata");
+                        }
                         String envValue = bundle.getString(key);
 
                         if (envValue != null) {
                             try {
                                 Os.setenv(envKey, envValue, false);
-                                Log.d("App", "Set env var: " + envKey + "=" + envValue);
+                                Log.d("App", "Set env var: " + envKey + " (value redacted)");
                             } catch (ErrnoException e) {
                                 Log.e("App", "Failed to set env var: " + envKey, e);
                             }
