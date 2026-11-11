@@ -34,7 +34,10 @@ public class ToolsFragment extends Fragment {
 
     private EditText userIdInput;
     private EditText totalExpInput;
+    private EditText baseExpInput;
+    private EditText multiplierInput;
     private Button applyButton;
+    private Button multiplierApplyButton;
     private TextView statusView;
 
     public ToolsFragment() {
@@ -51,10 +54,14 @@ public class ToolsFragment extends Fragment {
         View view = inflater.inflate(R.layout.fragment_tools, container, false);
         userIdInput = view.findViewById(R.id.expAdminUserId);
         totalExpInput = view.findViewById(R.id.expAdminTotal);
+        baseExpInput = view.findViewById(R.id.expAdminBaseExp);
+        multiplierInput = view.findViewById(R.id.expAdminMultiplier);
         applyButton = view.findViewById(R.id.expAdminApply);
+        multiplierApplyButton = view.findViewById(R.id.expAdminMultiplyApply);
         statusView = view.findViewById(R.id.expAdminStatus);
 
         applyButton.setOnClickListener(v -> confirmAndApply());
+        multiplierApplyButton.setOnClickListener(v -> confirmAndApplyMultiplier());
         return view;
     }
 
@@ -82,12 +89,66 @@ public class ToolsFragment extends Fragment {
                 .show();
     }
 
+    private void confirmAndApplyMultiplier() {
+        final long userId;
+        final long baseExp;
+        final long multiplier;
+        final long appliedExp;
+        try {
+            userId = Long.parseLong(userIdInput.getText().toString().trim());
+            baseExp = Long.parseLong(baseExpInput.getText().toString().trim());
+            multiplier = Long.parseLong(multiplierInput.getText().toString().trim());
+            if (userId <= 0 || baseExp < 0 || multiplier < 1) {
+                throw new NumberFormatException("Values are outside the allowed range");
+            }
+            appliedExp = Math.multiplyExact(baseExp, multiplier);
+        } catch (NumberFormatException | ArithmeticException e) {
+            statusView.setText("Enter a positive User ID, non-negative base EXP, and positive multiplier that fit in 64-bit integers.");
+            return;
+        }
+
+        new AlertDialog.Builder(requireContext())
+                .setTitle("Apply EXP multiplier")
+                .setMessage("Add " + formatNumber(baseExp) + " EXP × " + formatNumber(multiplier)
+                        + " = " + formatNumber(appliedExp) + " EXP to user " + userId + "?\n\n"
+                        + "Rank-up effects use NPPS4's existing EXP logic.")
+                .setPositiveButton("Apply", (dialog, which) -> submitExpMultiplier(userId, baseExp, multiplier))
+                .setNegativeButton("Cancel", null)
+                .show();
+    }
+
     private void submitExp(long userId, long totalExp) {
-        if (applyButton == null || statusView == null) {
+        JSONObject payload = new JSONObject();
+        try {
+            payload.put("user_id", userId);
+            payload.put("total_exp", totalExp);
+        } catch (Exception e) {
+            statusView.setText("Unable to prepare EXP request: " + e.getClass().getSimpleName());
+            return;
+        }
+        submitAdminExp("/admin/exp/total", payload, "Absolute EXP update");
+    }
+
+    private void submitExpMultiplier(long userId, long baseExp, long multiplier) {
+        JSONObject payload = new JSONObject();
+        try {
+            payload.put("user_id", userId);
+            payload.put("base_exp", baseExp);
+            payload.put("multiplier", multiplier);
+        } catch (Exception e) {
+            statusView.setText("Unable to prepare EXP multiplier request: " + e.getClass().getSimpleName());
+            return;
+        }
+        submitAdminExp("/admin/exp/add", payload, "EXP multiplier");
+    }
+
+    private void submitAdminExp(String endpoint, JSONObject payload, String operationLabel) {
+        if (applyButton == null || multiplierApplyButton == null || statusView == null) {
             return;
         }
         applyButton.setEnabled(false);
-        statusView.setText("Applying EXP total...");
+        multiplierApplyButton.setEnabled(false);
+        statusView.setText(operationLabel + " in progress...");
 
         Context appContext = requireContext().getApplicationContext();
         executor.execute(() -> {
@@ -100,7 +161,7 @@ public class ToolsFragment extends Fragment {
                 }
 
                 connection = (HttpURLConnection) new URL(
-                        "http://127.0.0.1:51376/admin/exp/total"
+                        "http://127.0.0.1:51376" + endpoint
                 ).openConnection();
                 connection.setRequestMethod("POST");
                 connection.setConnectTimeout(3000);
@@ -110,9 +171,6 @@ public class ToolsFragment extends Fragment {
                 connection.setRequestProperty("Authorization", "Bearer " + token);
                 connection.setRequestProperty("Content-Type", "application/json; charset=utf-8");
 
-                JSONObject payload = new JSONObject();
-                payload.put("user_id", userId);
-                payload.put("total_exp", totalExp);
                 try (OutputStream output = connection.getOutputStream()) {
                     output.write(payload.toString().getBytes(StandardCharsets.UTF_8));
                 }
@@ -125,24 +183,25 @@ public class ToolsFragment extends Fragment {
 
                 if (responseCode == HttpURLConnection.HTTP_OK) {
                     JSONObject response = new JSONObject(responseBody);
-                    message = "Updated user " + response.getLong("user_id")
+                    message = operationLabel + " succeeded for user " + response.getLong("user_id")
                             + ": Rank " + response.getInt("before_level")
                             + " -> " + response.getInt("after_level")
                             + ", EXP " + formatNumber(response.getLong("before_exp"))
                             + " -> " + formatNumber(response.getLong("after_exp"));
+                    if (response.has("applied_exp")) {
+                        message += " (+" + formatNumber(response.getLong("applied_exp")) + " EXP)";
+                    }
                 } else {
                     String detail = responseBody;
                     try {
-                        detail = new JSONObject(responseBody).optString(
-                                "detail",
-                                new JSONObject(responseBody).optString("message", responseBody)
-                        );
+                        JSONObject error = new JSONObject(responseBody);
+                        detail = error.optString("detail", error.optString("message", responseBody));
                     } catch (Exception ignored) {
                     }
-                    message = "EXP update failed (HTTP " + responseCode + "): " + detail;
+                    message = operationLabel + " failed (HTTP " + responseCode + "): " + detail;
                 }
             } catch (Exception e) {
-                message = "EXP update failed: " + e.getClass().getSimpleName()
+                message = operationLabel + " failed: " + e.getClass().getSimpleName()
                         + (e.getMessage() == null ? "" : " - " + e.getMessage());
             } finally {
                 if (connection != null) {
@@ -152,11 +211,16 @@ public class ToolsFragment extends Fragment {
 
             final String resultMessage = message;
             mainHandler.post(() -> {
-                if (!isAdded() || statusView == null || applyButton == null) {
+                if (!isAdded() || statusView == null) {
                     return;
                 }
                 statusView.setText(resultMessage);
-                applyButton.setEnabled(true);
+                if (applyButton != null) {
+                    applyButton.setEnabled(true);
+                }
+                if (multiplierApplyButton != null) {
+                    multiplierApplyButton.setEnabled(true);
+                }
             });
         });
     }
@@ -183,7 +247,10 @@ public class ToolsFragment extends Fragment {
     public void onDestroyView() {
         userIdInput = null;
         totalExpInput = null;
+        baseExpInput = null;
+        multiplierInput = null;
         applyButton = null;
+        multiplierApplyButton = null;
         statusView = null;
         super.onDestroyView();
     }

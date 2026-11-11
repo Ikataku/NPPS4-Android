@@ -282,6 +282,60 @@
             app:layout_constraintTop_toBottomOf="@+id/expAdminTotalLayout" />
 
         <TextView
+            android:id="@+id/expAdminMultiplierTitle"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="16dp"
+            android:text="EXP Multiplier"
+            android:textSize="20sp"
+            app:layout_constraintStart_toStartOf="parent"
+            app:layout_constraintTop_toBottomOf="@+id/expAdminApply" />
+
+        <com.google.android.material.textfield.TextInputLayout
+            android:id="@+id/expAdminBaseExpLayout"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="4dp"
+            app:layout_constraintEnd_toEndOf="parent"
+            app:layout_constraintStart_toStartOf="parent"
+            app:layout_constraintTop_toBottomOf="@+id/expAdminMultiplierTitle">
+
+            <com.google.android.material.textfield.TextInputEditText
+                android:id="@+id/expAdminBaseExp"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:hint="Base EXP to add"
+                android:inputType="number" />
+        </com.google.android.material.textfield.TextInputLayout>
+
+        <com.google.android.material.textfield.TextInputLayout
+            android:id="@+id/expAdminMultiplierLayout"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="4dp"
+            app:layout_constraintEnd_toEndOf="parent"
+            app:layout_constraintStart_toStartOf="parent"
+            app:layout_constraintTop_toBottomOf="@+id/expAdminBaseExpLayout">
+
+            <com.google.android.material.textfield.TextInputEditText
+                android:id="@+id/expAdminMultiplier"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:hint="Multiplier (e.g. 2)"
+                android:inputType="number" />
+        </com.google.android.material.textfield.TextInputLayout>
+
+        <Button
+            android:id="@+id/expAdminMultiplyApply"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="4dp"
+            android:text="Add EXP × multiplier"
+            app:layout_constraintEnd_toEndOf="parent"
+            app:layout_constraintStart_toStartOf="parent"
+            app:layout_constraintTop_toBottomOf="@+id/expAdminMultiplierLayout" />
+
+        <TextView
             android:id="@+id/expAdminStatus"
             android:layout_width="0dp"
             android:layout_height="wrap_content"
@@ -289,7 +343,7 @@
             android:text="No EXP change requested."
             app:layout_constraintEnd_toEndOf="parent"
             app:layout_constraintStart_toStartOf="parent"
-            app:layout_constraintTop_toBottomOf="@+id/expAdminApply" />
+            app:layout_constraintTop_toBottomOf="@+id/expAdminMultiplyApply" />
 
     </androidx.constraintlayout.widget.ConstraintLayout>
 </ScrollView>
