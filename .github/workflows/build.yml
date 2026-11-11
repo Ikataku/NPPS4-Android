@@ -4,6 +4,11 @@ on: [push, pull_request]
 permissions:
   contents: read
 
+# Keep one active build per branch; a newer push supersedes an older build.
+concurrency:
+  group: npps4-android-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   build:
     runs-on: ubuntu-latest
